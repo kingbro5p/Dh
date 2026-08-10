@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Beam — turn any HTML file into a link</title>
+<meta name="description" content="Drop an HTML file, preview it instantly, and beam it to anyone as a single link. No server, no database." />
+<meta name="theme-color" content="#F2B84B" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 34'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23F2B84B'/%3E%3Cstop offset='100%25' stop-color='%23C98B21'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='34' height='34' rx='9' fill='url(%23g)'/%3E%3Ccircle cx='17' cy='17' r='10' fill='none' stroke='%231A1400' stroke-opacity='.5' stroke-width='1.5'/%3E%3Ccircle cx='17' cy='17' r='5' fill='none' stroke='%231A1400' stroke-width='2'/%3E%3C/svg%3E" />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 34'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23F2B84B'/%3E%3Cstop offset='100%25' stop-color='%23C98B21'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='34' height='34' rx='9' fill='url(%23g)'/%3E%3Ccircle cx='17' cy='17' r='10' fill='none' stroke='%231A1400' stroke-opacity='.5' stroke-width='1.5'/%3E%3Ccircle cx='17' cy='17' r='5' fill='none' stroke='%231A1400' stroke-width='2'/%3E%3C/svg%3E" />
+<style>
+  /* ============ Design tokens ============ */
+  :root{
+    --void:#0A0D12;
+    --panel:#12161F;
+    --panel-2:#171C27;
+    --line:#262C3A;
+    --signal:#F2B84B;
+    --signal-dim:#8A6A2E;
+    --pulse:#5EEAD4;
+    --danger:#F2716B;
+    --ink:#E7E9EE;
+    --fog:#8891A3;
+    --radius:10px;
+    --mono: 'Beam Mono', ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+    --disp: 'Beam Display', 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --sidebar-w: 340px;
+    --shadow: 0 20px 50px -20px rgba(0,0,0,0.6);
+  }
+  [data-theme="light"]{
+    --void:#EEF0F4;
+    --panel:#FFFFFF;
+    --panel-2:#F5F6F9;
+    --line:#DCE0E8;
+    --signal-dim:#E9C97E;
+    --ink:#12161F;
+    --fog:#5B6272;
+    --shadow: 0 20px 50px -25px rgba(20,24,35,0.25);
+  }
+
+  @font-face{
+    font-family:'Beam Display';
+    src: local('Space Grotesk');
+  }
+
+  *,*::before,*::after{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    font-family: var(--disp);
+    background: var(--void);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    transition: background .25s ease, color .25s ease;
+  }
+  ::selection{ background: var(--signal); color:#1A1400; }
+
+  a{ color: inherit; }
+  button{ font-family: inherit; }
+
+  .app{
+    height:100vh;
+    display:flex;
+    flex-direction:row;
+    overflow:hidden;
+  }
+
+  /* ============ Sidebar / control panel ============ */
+  .panel{
+    width: var(--sidebar-w);
+    min-width: var(--sidebar-w);
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+    overflow-y:auto;
+    padding: 22px 20px 26px;
+    gap: 22px;
+  }
+
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .brand-mark{
+    width:34px; height:34px;
+    border-radius: 9px;
+    background: linear-gradient(155deg, var(--signal), #C98B21);
+    position:relative;
+    flex-shrink:0;
+    box-shadow: 0 6px 16px -6px rgba(242,184,74,0.6);
+  }
+  .brand-mark::before,.brand-mark::after{
+    content:"";
+    position:absolute;
+    left:50%; top:50%;
+    border: 2px solid #1A1400;
+    border-radius:50%;
+    transform: translate(-50%,-50%);
+    opacity:.85;
+  }
+  .brand-mark::before{ width:10px; height:10px; }
+  .brand-mark::after{ width:20px; height:20px; border-width:1.5px; opacity:.5; }
+  .brand-name{
+    font-weight:700;
+    font-size:18px;
+    letter-spacing:-0.02em;
+  }
+  .brand-tag{
+    font-size:11px;
+    color: var(--fog);
+    margin-top:1px;
+    font-family: var(--mono);
+    letter-spacing:.02em;
+  }
+
+  .theme-toggle{
+    margin-left:auto;
+    width:38px; height:38px;
+    border-radius:9px;
+    border:1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--ink);
+    cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition: border-color .15s ease, transform .15s ease;
+  }
+  .theme-toggle:hover{ border-color: var(--signal); }
+  .theme-toggle:active{ transform: scale(.94); }
+  .theme-toggle svg{ width:17px; height:17px; }
+
+  .section-label{
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--fog);
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .section-label::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background: var(--line);
+  }
+
+  /* ---- Dropzone (viewfinder style) ---- */
+  .dropzone{
+    position:relative;
+    border-radius: var(--radius);
+    padding: 26px 16px;
+    text-align:center;
+    cursor:pointer;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    transition: border-color .18s ease, background .18s ease;
+  }
+  .dropzone:hover{ border-color: var(--signal-dim); }
+  .dropzone.drag{
+    border-color: var(--signal);
+    background: color-mix(in srgb, var(--signal) 8%, var(--panel-2));
+  }
+  .dropzone .corner{
+    position:absolute;
+    width:14px; height:14px;
+    border: 2px solid var(--fog);
+    opacity:.5;
+    transition: border-color .18s ease, opacity .18s ease;
+  }
+  .dropzone.drag .corner{ border-color: var(--signal); opacity:1; }
+  .corner.tl{ top:6px; left:6px; border-right:0; border-bottom:0; }
+  .corner.tr{ top:6px; right:6px; border-left:0; border-bottom:0; }
+  .corner.bl{ bottom:6px; left:6px; border-right:0; border-top:0; }
+  .corner.br{ bottom:6px; right:6px; border-left:0; border-top:0; }
+
+  .dropzone-icon{
+    width:34px; height:34px;
+    margin: 0 auto 10px;
+    color: var(--fog);
+  }
+  .dropzone.drag .dropzone-icon{ color: var(--signal); }
+  .dropzone-title{ font-size:13.5px; font-weight:600; }
+  .dropzone-sub{ font-size:11.5px; color: var(--fog); margin-top:4px; }
+  .dropzone input{ display:none; }
+
+  .file-card{
+    display:none;
+    border-radius: var(--radius);
+    border:1px solid var(--line);
+    background: var(--panel-2);
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .file-card.show{ display:block; }
+  .file-card-row{
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    padding: 3px 0;
+    color: var(--fog);
+  }
+  .file-card-row span:last-child{ color: var(--ink); text-align:right; word-break:break-all; }
+  .file-card-name{
+    font-weight:700;
+    color: var(--ink);
+    font-family: var(--disp);
+    font-size: 13.5px;
+    margin-bottom:6px;
+    word-break: break-all;
+  }
+  .file-clear{
+    margin-top:8px;
+    width:100%;
+    background:none;
+    border:1px dashed var(--line);
+    color: var(--fog);
+    border-radius:7px;
+    padding:6px;
+    font-size:11px;
+    cursor:pointer;
+    font-family: var(--mono);
+  }
+  .file-clear:hover{ color: var(--danger); border-color: var(--danger); }
+
+  /* ---- Signal strip (signature element) ---- */
+  .signal-strip{
+    display:none;
+    border-radius: var(--radius);
+    border:1px solid var(--line);
+    background: #0A0D12;
+    overflow:hidden;
+    position:relative;
+    height:34px;
+  }
+  [data-theme="light"] .signal-strip{ background:#0E1117; }
+  .signal-strip.show{ display:block; }
+  .signal-strip-track{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    white-space:nowrap;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--pulse);
+    opacity:.85;
+    padding-left: 6px;
+    animation: scroll-signal 6s linear infinite;
+  }
+  @keyframes scroll-signal{
+    from{ transform: translateX(0); }
+    to{ transform: translateX(-50%); }
+  }
+  .signal-strip::before{
+    content:"LIVE";
+    position:absolute;
+    left:8px; top:8px;
+    z-index:2;
+    font-family: var(--mono);
+    font-size:9px;
+    letter-spacing:.1em;
+    color: var(--void);
+    background: var(--signal);
+    padding:2px 5px;
+    border-radius:3px;
+    font-weight:700;
+  }
+  .signal-strip-track{ padding-left: 52px; }
+
+  /* ---- Buttons ---- */
+  .btn{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    width:100%;
+    padding: 11px 14px;
+    border-radius: 8px;
+    border:1px solid var(--line);
+    font-size: 13px;
+    font-weight:600;
+    cursor:pointer;
+    transition: transform .12s ease, border-color .15s ease, background .15s ease, opacity .15s ease;
+    background: var(--panel-2);
+    color: var(--ink);
+    font-family: var(--disp);
+  }
+  .btn svg{ width:15px; height:15px; flex-shrink:0; }
+  .btn:hover{ border-color: var(--signal-dim); }
+  .btn:active{ transform: scale(.98); }
+  .btn:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn:disabled:hover{ border-color: var(--line); }
+  .btn-primary{
+    background: var(--signal);
+    border-color: var(--signal);
+    color: #1A1400;
+  }
+  .btn-primary:hover{ border-color: var(--signal); filter: brightness(1.06); }
+  .btn-ghost{ background: transparent; }
+
+  .btn-row{ display:flex; flex-direction:column; gap:9px; }
+
+  .link-box{
+    display:none;
+    border-radius: var(--radius);
+    border:1px solid var(--line);
+    background: var(--panel-2);
+    padding: 10px 12px;
+  }
+  .link-box.show{ display:block; }
+  .link-box textarea{
+    width:100%;
+    resize:none;
+    border:none;
+    background:none;
+    color: var(--pulse);
+    font-family: var(--mono);
+    font-size:11px;
+    line-height:1.5;
+    outline:none;
+    height:52px;
+  }
+  .link-meta{
+    display:flex;
+    justify-content:space-between;
+    font-family: var(--mono);
+    font-size:10.5px;
+    color: var(--fog);
+    margin-top:6px;
+    padding-top:6px;
+    border-top: 1px solid var(--line);
+  }
+  .link-meta.warn span:last-child{ color: var(--signal); }
+  .link-meta.danger span:last-child{ color: var(--danger); }
+
+  .spacer{ flex:1; }
+
+  .footnote{
+    font-size:11px;
+    color: var(--fog);
+    line-height:1.6;
+  }
+  .footnote strong{ color: var(--ink); }
+
+  /* ============ Stage / preview ============ */
+  .stage-wrap{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+  }
+  .stage-bar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    flex-shrink:0;
+  }
+  .stage-dot{
+    width:8px; height:8px;
+    border-radius:50%;
+    background: var(--fog);
+    flex-shrink:0;
+  }
+  .stage-dot.live{ background: var(--pulse); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pulse) 25%, transparent); }
+  .stage-title{
+    font-family: var(--mono);
+    font-size:12px;
+    color: var(--fog);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .stage-title strong{ color: var(--ink); font-weight:600; }
+  .stage-actions{
+    margin-left:auto;
+    display:flex;
+    gap:8px;
+  }
+  .icon-btn{
+    width:32px; height:32px;
+    border-radius:7px;
+    border:1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .icon-btn:hover{ border-color: var(--signal-dim); }
+  .icon-btn svg{ width:15px; height:15px; }
+
+  .stage{
+    flex:1;
+    position:relative;
+    background:
+      linear-gradient(var(--line) 1px, transparent 1px) 0 0/24px 24px,
+      linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0/24px 24px,
+      var(--void);
+    background-color: var(--void);
+    opacity: 1;
+  }
+  [data-theme="dark"] .stage{ background-color:#0A0D12; }
+  .stage::before{
+    content:"";
+    position:absolute; inset:0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 26px 26px;
+    opacity:.35;
+    pointer-events:none;
+  }
+  .stage iframe{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    border:none;
+    background: #fff;
+    display:none;
+  }
+  .stage iframe.show{ display:block; }
+
+  .empty-state{
+    position:absolute; inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    text-align:center;
+    padding: 20px;
+    gap:14px;
+  }
+  .empty-state.hide{ display:none; }
+  .empty-glyph{
+    width:64px; height:64px;
+    color: var(--line);
+  }
+  .empty-title{
+    font-size: 20px;
+    font-weight:700;
+    letter-spacing:-0.01em;
+  }
+  .empty-sub{
+    font-size:13px;
+    color: var(--fog);
+    max-width:340px;
+    line-height:1.6;
+  }
+
+  /* ============ Toast ============ */
+  .toast{
+    position:fixed;
+    bottom:22px;
+    left:50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--panel);
+    border:1px solid var(--line);
+    color: var(--ink);
+    padding: 11px 18px;
+    border-radius: 9px;
+    font-size:13px;
+    font-weight:600;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    box-shadow: var(--shadow);
+    opacity:0;
+    pointer-events:none;
+    transition: opacity .22s ease, transform .22s ease;
+    z-index: 50;
+  }
+  .toast.show{
+    opacity:1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .toast svg{ width:15px; height:15px; color: var(--pulse); flex-shrink:0; }
+  .toast.err svg{ color: var(--danger); }
+
+  /* ============ Responsive ============ */
+  @media (max-width: 860px){
+    .app{ flex-direction:column; }
+    .panel{
+      width:100%;
+      min-width:0;
+      border-right:none;
+      border-bottom:1px solid var(--line);
+      max-height: 46vh;
+      padding: 16px;
+    }
+    .stage-wrap{ flex:1; min-height: 40vh; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .signal-strip-track{ animation: none; }
+    *{ transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; }
+  }
+
+  /* focus visibility */
+  a:focus-visible, button:focus-visible, [tabindex]:focus-visible, .dropzone:focus-visible{
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="app">
+
+  <!-- ============ Control panel ============ -->
+  <aside class="panel">
+
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <div>
+        <div class="brand-name">Beam</div>
+        <div class="brand-tag">html → link, no server</div>
+      </div>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">
+        <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+      </button>
+    </div>
+
+    <div>
+      <div class="section-label">Load a file</div>
+      <div style="height:10px"></div>
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Choose or drop an HTML file">
+        <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+        <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M12 18v-6M9.5 14.5 12 12l2.5 2.5"></path></svg>
+        <div class="dropzone-title">Drop an .html file here</div>
+        <div class="dropzone-sub">or click to browse</div>
+        <input type="file" id="fileInput" accept=".html,text/html" />
+      </div>
+
+      <div style="height:10px"></div>
+      <div class="file-card" id="fileCard">
+        <div class="file-card-name" id="fileName">—</div>
+        <div class="file-card-row"><span>Size</span><span id="fileSize">—</span></div>
+        <div class="file-card-row"><span>Loaded</span><span id="fileTime">—</span></div>
+        <button class="file-clear" id="fileClear" type="button">CLEAR FILE</button>
+      </div>
+    </div>
+
+    <div id="linkSection" style="display:none">
+      <div class="section-label">Beam it</div>
+      <div style="height:10px"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="generateBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"></path></svg>
+          Generate shareable link
+        </button>
+      </div>
+
+      <div style="height:10px"></div>
+      <div class="signal-strip" id="signalStrip">
+        <div class="signal-strip-track" id="signalTrack"></div>
+      </div>
+
+      <div style="height:10px"></div>
+      <div class="link-box" id="linkBox">
+        <textarea id="linkOutput" readonly aria-label="Shareable link"></textarea>
+        <div class="link-meta" id="linkMeta">
+          <span>URL length</span><span id="linkLength">0 chars</span>
+        </div>
+      </div>
+
+      <div style="height:10px"></div>
+      <button class="btn" id="copyBtn" type="button" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        Copy shareable link
+      </button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="footnote">
+      <strong>How it works —</strong> your file is base64-encoded and packed into the URL's hash. Nothing is uploaded; the link itself carries the page. Anyone who opens it decodes and renders it locally, in their own browser.
+    </div>
+
+  </aside>
+
+  <!-- ============ Preview stage ============ -->
+  <div class="stage-wrap">
+    <div class="stage-bar">
+      <span class="stage-dot" id="stageDot"></span>
+      <span class="stage-title" id="stageTitle">No file loaded</span>
+      <div class="stage-actions">
+        <button class="icon-btn" id="fullscreenBtn" type="button" aria-label="Toggle fullscreen preview" title="Toggle fullscreen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+        </button>
+      </div>
+    </div>
+    <div class="stage" id="stage">
+      <div class="empty-state" id="emptyState">
+        <svg class="empty-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"></rect><path d="M3 9h18M8 4v5"></path><path d="M9 14l2 2 4-4"></path></svg>
+        <div class="empty-title">Nothing beamed in yet</div>
+        <div class="empty-sub">Drop an HTML file on the left to preview it here, or open a link someone already beamed to you.</div>
+      </div>
+      <iframe id="previewFrame" title="HTML preview" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin"></iframe>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+  <span id="toastMsg">Copied</span>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Elements ----------
+  var body = document.body;
+  var themeToggle = document.getElementById('themeToggle');
+  var themeIcon = document.getElementById('themeIcon');
+
+  var dropzone = document.getElementById('dropzone');
+  var fileInput = document.getElementById('fileInput');
+  var fileCard = document.getElementById('fileCard');
+  var fileName = document.getElementById('fileName');
+  var fileSize = document.getElementById('fileSize');
+  var fileTime = document.getElementById('fileTime');
+  var fileClear = document.getElementById('fileClear');
+
+  var linkSection = document.getElementById('linkSection');
+  var generateBtn = document.getElementById('generateBtn');
+  var signalStrip = document.getElementById('signalStrip');
+  var signalTrack = document.getElementById('signalTrack');
+  var linkBox = document.getElementById('linkBox');
+  var linkOutput = document.getElementById('linkOutput');
+  var linkMeta = document.getElementById('linkMeta');
+  var linkLength = document.getElementById('linkLength');
+  var copyBtn = document.getElementById('copyBtn');
+
+  var stage = document.getElementById('stage');
+  var stageDot = document.getElementById('stageDot');
+  var stageTitle = document.getElementById('stageTitle');
+  var emptyState = document.getElementById('emptyState');
+  var previewFrame = document.getElementById('previewFrame');
+  var fullscreenBtn = document.getElementById('fullscreenBtn');
+
+  var toast = document.getElementById('toast');
+  var toastMsg = document.getElementById('toastMsg');
+
+  var currentHtml = null;
+  var currentName = null;
+  var currentBlobUrl = null;
+  var toastTimer = null;
+
+  var SAFE_URL_LENGTH = 8000; // heuristic warn threshold
+
+  // ---------- Theme ----------
+  function applyTheme(t){
+    body.setAttribute('data-theme', t);
+    try{ localStorage.setItem('beam-theme', t); }catch(e){}
+    themeIcon.innerHTML = t === 'dark'
+      ? '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>'
+      : '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"></path>';
+  }
+  (function initTheme(){
+    var saved = null;
+    try{ saved = localStorage.getItem('beam-theme'); }catch(e){}
+    if(!saved){
+      saved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    }
+    applyTheme(saved);
+  })();
+  themeToggle.addEventListener('click', function(){
+    applyTheme(body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+
+  // ---------- Toast ----------
+  function showToast(msg, isErr){
+    toastMsg.textContent = msg;
+    toast.classList.toggle('err', !!isErr);
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 2400);
+  }
+
+  // ---------- Helpers ----------
+  function formatBytes(n){
+    if(n < 1024) return n + ' B';
+    if(n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+    return (n/(1024*1024)).toFixed(2) + ' MB';
+  }
+
+  function utf8ToBase64(str){
+    return btoa(unescape(encodeURIComponent(str)));
+  }
+  function base64ToUtf8(str){
+    return decodeURIComponent(escape(atob(str)));
+  }
+
+  function renderHtml(html, label){
+    if(currentBlobUrl){ URL.revokeObjectURL(currentBlobUrl); currentBlobUrl = null; }
+    var blob = new Blob([html], { type: 'text/html' });
+    currentBlobUrl = URL.createObjectURL(blob);
+    previewFrame.src = currentBlobUrl;
+    previewFrame.classList.add('show');
+    emptyState.classList.add('hide');
+    stageDot.classList.add('live');
+    stageTitle.innerHTML = '<strong>' + (label || 'preview') + '</strong> — live preview';
+  }
+
+  function resetLinkUI(){
+    linkBox.classList.remove('show');
+    signalStrip.classList.remove('show');
+    copyBtn.disabled = true;
+    linkOutput.value = '';
+  }
+
+  // ---------- File loading ----------
+  function handleFile(file){
+    if(!file) return;
+    var isHtml = /\.html?$/i.test(file.name) || file.type === 'text/html';
+    if(!isHtml){
+      showToast('Please choose a .html file', true);
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function(e){
+      currentHtml = e.target.result;
+      currentName = file.name;
+
+      fileName.textContent = file.name;
+      fileSize.textContent = formatBytes(file.size);
+      fileTime.textContent = new Date().toLocaleTimeString();
+      fileCard.classList.add('show');
+      linkSection.style.display = 'block';
+      resetLinkUI();
+
+      renderHtml(currentHtml, file.name);
+      showToast('File loaded — ready to beam');
+    };
+    reader.onerror = function(){
+      showToast('Could not read that file', true);
+    };
+    reader.readAsText(file);
+  }
+
+  dropzone.addEventListener('click', function(){ fileInput.click(); });
+  dropzone.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); fileInput.click(); }
+  });
+  fileInput.addEventListener('change', function(e){
+    handleFile(e.target.files[0]);
+    fileInput.value = '';
+  });
+
+  ['dragenter','dragover'].forEach(function(evt){
+    dropzone.addEventListener(evt, function(e){
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.add('drag');
+    });
+  });
+  ['dragleave','drop'].forEach(function(evt){
+    dropzone.addEventListener(evt, function(e){
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.remove('drag');
+    });
+  });
+  dropzone.addEventListener('drop', function(e){
+    var dt = e.dataTransfer;
+    if(dt && dt.files && dt.files.length){ handleFile(dt.files[0]); }
+  });
+
+  fileClear.addEventListener('click', function(){
+    currentHtml = null;
+    currentName = null;
+    fileCard.classList.remove('show');
+    linkSection.style.display = 'none';
+    resetLinkUI();
+    previewFrame.classList.remove('show');
+    previewFrame.src = 'about:blank';
+    emptyState.classList.remove('hide');
+    stageDot.classList.remove('live');
+    stageTitle.textContent = 'No file loaded';
+    showToast('Cleared');
+  });
+
+  // ---------- Signal strip animation ----------
+  function runSignalStrip(sample){
+    var chars = sample.slice(0, 400) || 'ENCODING';
+    signalTrack.textContent = chars + '   ' + chars;
+    signalStrip.classList.add('show');
+  }
+
+  // ---------- Generate link ----------
+  generateBtn.addEventListener('click', function(){
+    if(!currentHtml){ showToast('Load a file first', true); return; }
+
+    generateBtn.disabled = true;
+    var original = generateBtn.innerHTML;
+    generateBtn.innerHTML = 'Encoding…';
+
+    setTimeout(function(){
+      try{
+        var encoded = utf8ToBase64(currentHtml);
+        runSignalStrip(encoded);
+
+        var url = location.origin + location.pathname + '#view=' + encoded;
+        linkOutput.value = url;
+        linkBox.classList.add('show');
+        linkLength.textContent = url.length.toLocaleString() + ' chars';
+
+        linkMeta.classList.remove('warn','danger');
+        if(url.length > SAFE_URL_LENGTH){
+          linkMeta.classList.add('danger');
+          showToast('Link is very long — some browsers or chat apps may truncate it', true);
+        } else if(url.length > 2000){
+          linkMeta.classList.add('warn');
+        }
+
+        copyBtn.disabled = false;
+        showToast('Link generated');
+      }catch(err){
+        showToast('Could not encode this file', true);
+      }finally{
+        generateBtn.disabled = false;
+        generateBtn.innerHTML = original;
+      }
+    }, 260);
+  });
+
+  // ---------- Copy link ----------
+  copyBtn.addEventListener('click', function(){
+    if(!linkOutput.value) return;
+    var finish = function(ok){
+      showToast(ok ? 'Copied to clipboard' : 'Could not copy — select and copy manually', !ok);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(linkOutput.value).then(function(){ finish(true); }, function(){
+        legacyCopy();
+      });
+    } else {
+      legacyCopy();
+    }
+    function legacyCopy(){
+      try{
+        linkOutput.removeAttribute('readonly');
+        linkOutput.select();
+        linkOutput.setSelectionRange(0, 99999);
+        var ok = document.execCommand('copy');
+        linkOutput.setAttribute('readonly', '');
+        finish(ok);
+      }catch(e){ finish(false); }
+    }
+  });
+
+  // ---------- Fullscreen ----------
+  fullscreenBtn.addEventListener('click', function(){
+    if(!document.fullscreenElement){
+      (stage.requestFullscreen || stage.webkitRequestFullscreen || function(){}).call(stage);
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+    }
+  });
+
+  // ---------- Load from URL hash on boot ----------
+  function loadFromHash(){
+    var hash = location.hash || '';
+    var match = hash.match(/^#view=(.+)$/);
+    if(!match) return;
+    try{
+      var html = base64ToUtf8(decodeURIComponent(match[1]));
+      currentHtml = html;
+      currentName = 'shared-page.html';
+      renderHtml(html, 'shared page');
+      linkSection.style.display = 'block';
+      fileCard.classList.remove('show');
+      showToast('Loaded a page from your link');
+    }catch(err){
+      showToast('This link could not be decoded', true);
+    }
+  }
+  loadFromHash();
+  window.addEventListener('hashchange', loadFromHash);
+
+})();
+</script>
+</body>
+</html>
